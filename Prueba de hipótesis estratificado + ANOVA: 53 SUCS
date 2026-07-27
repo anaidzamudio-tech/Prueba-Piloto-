@@ -1,0 +1,101 @@
+import pandas as pd
+import scipy.stats as stats
+from statsmodels.stats.multicomp import pairwise_tukeyhsd
+import numpy as np
+
+# =============================================================================
+# 1. DATOS LIMPIOS POR SEGMENTO (Sin Agosto)
+# Periodo Pre: Sept, Oct, Nov (3 meses) | Periodo Post: Dic, Ene, Feb, Mar (4 meses)
+# =============================================================================
+datos_segmentos = {
+    'Regulares': {
+        'Piloto': np.array([2361, 2320, 2125, 2547, 2484, 2252, 2618]),
+        'Testigo': np.array([1974, 1884, 1845, 1758, 1661, 1624, 2028])
+    },
+    'A_Observar': {
+        'Piloto': np.array([871, 881, 747, 922, 884, 847, 934]),
+        'Testigo': np.array([841, 921, 840, 875, 826, 804, 888])
+    },
+    'Irregulares': {
+        'Piloto': np.array([1148, 1158, 1130, 1168, 1142, 1170, 1276]),
+        'Testigo': np.array([1212, 1243, 1172, 1144, 1100, 1009, 1150])
+    }
+}
+
+# =============================================================================
+# 2. CREACIÓN AUTOMÁTICA DEL TOTAL (53 SUCURSALES)
+# =============================================================================
+total_piloto = sum(val['Piloto'] for val in datos_segmentos.values())
+total_testigo = sum(val['Testigo'] for val in datos_segmentos.values())
+
+# Unimos el Total al inicio del diccionario general
+datos = {
+    'Total 53 Sucursales': {
+        'Piloto': total_piloto,
+        'Testigo': total_testigo
+    },
+    **datos_segmentos
+}
+
+efectos_netos = []
+nombres_segmentos = []
+
+print("\n" + "="*60)
+print("1. EFECTO NETO (DiD): TOTAL Y POR SEGMENTO (Dic - Mar)")
+print("="*60)
+
+# =============================================================================
+# 3. CÁLCULO DE DIFERENCIAS EN DIFERENCIAS (3 meses vs 4 meses)
+# =============================================================================
+for segmento, valores in datos.items():
+    # Diferencia total mensual entre Piloto y Testigo
+    diferencia_mensual = valores['Piloto'] - valores['Testigo']
+    
+    # Ventaja histórica (Promedio de los 3 meses PRE: índices 0, 1, 2)
+    ventaja_historica = diferencia_mensual[:3].mean()
+    
+    # Efecto Neto de los 4 meses POST (Diferencia lograda menos la ventaja histórica)
+    efecto_post = diferencia_mensual[3:] - ventaja_historica
+    
+    # Imprimir el Efecto Neto Promedio
+    impacto_promedio = efecto_post.mean()
+    print(f"▶ {segmento:<20}: {impacto_promedio:+.0f} altas adicionales mensuales")
+    
+    # CANDADO ESTADÍSTICO: Guardar para ANOVA únicamente los segmentos individuales.
+    # (El 'Total' no debe entrar al ANOVA porque violaría la independencia de los datos).
+    if segmento != 'Total 53 Sucursales':
+        efectos_netos.extend(efecto_post)
+        nombres_segmentos.extend([segmento] * 4) # 4 meses de impacto post por segmento
+
+# =============================================================================
+# 4. PREPARACIÓN PARA ANOVA (Solo Segmentos)
+# =============================================================================
+df_anova = pd.DataFrame({
+    'Segmento': nombres_segmentos,
+    'Efecto_Neto_Mensual': efectos_netos
+})
+
+grupo_reg = df_anova[df_anova['Segmento'] == 'Regulares']['Efecto_Neto_Mensual']
+grupo_obs = df_anova[df_anova['Segmento'] == 'A_Observar']['Efecto_Neto_Mensual']
+grupo_irr = df_anova[df_anova['Segmento'] == 'Irregulares']['Efecto_Neto_Mensual']
+
+f_stat, p_value_anova = stats.f_oneway(grupo_reg, grupo_obs, grupo_irr)
+
+print("\n" + "="*60)
+print("2. VALIDACIÓN ESTADÍSTICA ENTRE SEGMENTOS (ANOVA)")
+print("="*60)
+print(f"Valor-P (P-value) Global: {p_value_anova:.4f}")
+if p_value_anova < 0.05:
+    print(">> DIAGNÓSTICO: Hay diferencias abismales comprobadas entre los 3 segmentos.")
+else:
+    print(">> DIAGNÓSTICO: El rendimiento es similar en todos los segmentos.")
+
+# =============================================================================
+# 5. PRUEBA POST-HOC DE TUKEY
+# =============================================================================
+if p_value_anova < 0.05:
+    print("\n" + "="*60)
+    print("3. COMPARACIÓN CARA A CARA (TEST DE TUKEY)")
+    print("="*60)
+    tukey = pairwise_tukeyhsd(endog=df_anova['Efecto_Neto_Mensual'], groups=df_anova['Segmento'], alpha=0.05)
+    print(tukey)
