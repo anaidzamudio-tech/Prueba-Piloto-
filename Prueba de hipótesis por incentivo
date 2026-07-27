@@ -1,0 +1,54 @@
+import pandas as pd
+import statsmodels.formula.api as smf
+
+# 1. Base de datos agrupada por incentivo
+datos_incentivos = {
+    '$50': {
+        'Piloto': [3650, 3377, 3132, 3147, 3139, 3007, 3406, 3865, 3863],
+        'Testigo': [3243, 3449, 3423, 3293, 3220, 3050, 3442, 3195, 3713]
+    },
+    '$25': {
+        'Piloto': [3966, 3824, 3506, 3829, 3745, 3511, 3893, 4056, 4202],
+        'Testigo': [4254, 4116, 3783, 3790, 3626, 3520, 3900, 3747, 4315]
+    },
+    '$10': {
+        'Piloto': [3165, 3107, 2897, 3082, 3177, 2951, 3487, 3443, 3767],
+        'Testigo': [3310, 3329, 3135, 3013, 2990, 2809, 3562, 3284, 3485]
+    }
+}
+
+meses = ['Sept', 'Oct', 'Nov', 'Dic', 'Ene', 'Feb', 'Mar', 'Abr', 'May']
+periodo = ['Pre', 'Pre', 'Pre', 'Post', 'Post', 'Post', 'Post', 'Post', 'Post']
+
+print("================ RESULTADOS POR INCENTIVO (DiD) ================\n")
+
+# 2. Ciclo para evaluar cada incentivo de forma independiente
+for incentivo, vals in datos_incentivos.items():
+    df_data = []
+    
+    # Transformar a formato largo
+    for i in range(9):
+        df_data.append([meses[i], periodo[i], vals['Piloto'][i], 1])
+        df_data.append([meses[i], periodo[i], vals['Testigo'][i], 0])
+        
+    df = pd.DataFrame(df_data, columns=['Mes', 'Periodo', 'Altas', 'Es_Piloto'])
+    
+    # Crear variables Dummy
+    df['Es_Post'] = df['Periodo'].apply(lambda x: 1 if x == 'Post' else 0)
+    df['Interaccion_DiD'] = df['Es_Piloto'] * df['Es_Post']
+    
+    # Modelo Matemático
+    modelo = smf.ols('Altas ~ Es_Piloto + Es_Post + Interaccion_DiD', data=df).fit()
+    
+    efecto_neto = modelo.params['Interaccion_DiD']
+    p_value = modelo.pvalues['Interaccion_DiD']
+    
+    # Impresión de diagnóstico
+    print(f"▶ INCENTIVO DE {incentivo}")
+    print(f"  Impacto Neto: +{efecto_neto:.0f} altas adicionales/mes")
+    print(f"  Valor-p (Ruido): {p_value:.3f}")
+    if p_value < 0.05:
+        print("  Diagnóstico: Crecimiento sólido y validado.")
+    else:
+        print("  Diagnóstico Alta inestabilidad. Crecimiento no sostenido.")
+    print("-" * 64)
