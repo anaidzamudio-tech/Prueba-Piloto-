@@ -1,0 +1,63 @@
+import pandas as pd
+import statsmodels.formula.api as smf
+
+# 1. Base de datos agrupada por segmento (Segunda Etapa + Total)
+datos_segmentos = {
+    'Total 87 Sucursales': {
+        # Suma exacta de Regulares + A Observar + Irregulares
+        'Piloto': [6424, 5987, 5554, 5421, 5551, 5200, 5958, 6511, 6831],
+        'Testigo': [6367, 6464, 6137, 5962, 5893, 5562, 6497, 6199, 6906]
+    },
+    'Regulares': {
+        'Piloto': [3391, 3072, 2869, 2762, 2914, 2771, 3068, 3510, 3820],
+        'Testigo': [3292, 3413, 3323, 3175, 3259, 3096, 3587, 3360, 3595]
+    },
+    'A Observar': {
+        'Piloto': [1892, 1886, 1733, 1670, 1718, 1545, 1704, 1795, 1828],
+        'Testigo': [2138, 2060, 1846, 1870, 1757, 1642, 1954, 1847, 2148]
+    },
+    'Irregulares': {
+        'Piloto': [1141, 1029, 952, 989, 919, 884, 1186, 1206, 1183],
+        'Testigo': [937, 991, 968, 917, 877, 824, 956, 992, 1163]
+    }
+}
+
+# 2. Configuración de tiempo (7 meses Pre, 2 meses Post)
+meses = ['Sept', 'Oct', 'Nov', 'Dic', 'Ene', 'Feb', 'Mar', 'Abr', 'May']
+periodo = ['Pre', 'Pre', 'Pre', 'Pre', 'Pre', 'Pre', 'Pre', 'Post', 'Post']
+
+print("=== IMPACTO NETO DE LA SEGUNDA ETAPA (87 SUCURSALES) ===\n")
+
+# 3. Ciclo para evaluar cada segmento y el total
+for segmento, vals in datos_segmentos.items():
+    df_data = []
+    
+    # Transformar a formato largo
+    for i in range(9):
+        df_data.append([meses[i], periodo[i], vals['Piloto'][i], 1])
+        df_data.append([meses[i], periodo[i], vals['Testigo'][i], 0])
+        
+    df = pd.DataFrame(df_data, columns=['Mes', 'Periodo', 'Altas', 'Es_Piloto'])
+    
+    # Crear variables Dummy
+    df['Es_Post'] = df['Periodo'].apply(lambda x: 1 if x == 'Post' else 0)
+    df['Interaccion_DiD'] = df['Es_Piloto'] * df['Es_Post']
+    
+    # Modelo Matemático OLS
+    modelo = smf.ols('Altas ~ Es_Piloto + Es_Post + Interaccion_DiD', data=df).fit()
+    
+    efecto_neto = modelo.params['Interaccion_DiD']
+    p_value = modelo.pvalues['Interaccion_DiD']
+    
+    # Impresión de diagnóstico
+    print(f"▶ SEGMENTO: {segmento}")
+    print(f"  Impacto Neto: {efecto_neto:+.0f} altas adicionales/mes")
+    print(f"  Valor-p (Ruido): {p_value:.3f}")
+    
+    if p_value < 0.05:
+        print("  Diagnóstico: Crecimiento sólido y validado.")
+    elif efecto_neto > 0:
+        print("  Diagnóstico: Crecimiento positivo, pero con inestabilidad en la tendencia.")
+    else:
+        print("  Diagnóstico: Impacto negativo frente a la tendencia del crecimiento natural.")
+    print("-" * 65)
