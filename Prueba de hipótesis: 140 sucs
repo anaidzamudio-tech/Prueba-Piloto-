@@ -1,0 +1,68 @@
+import pandas as pd
+import statsmodels.formula.api as smf
+
+# 1. Base de datos para las 140 sucursales por segmento (Sept a May)
+datos_140 = {
+    'Total 140 Sucursales': {
+        'Piloto': [10781, 10308, 9535, 10058, 10061, 9469, 10786, 11364, 11832],
+        'Testigo': [10807, 10894, 10341, 10096, 9836, 9379, 10904, 10226, 11513]
+    },
+    'Regulares': {
+        'Piloto': [5740, 5369, 4985, 5309, 5398, 5023, 5686, 6107, 6431],
+        'Testigo': [5258, 5264, 5157, 4938, 4982, 4762, 5675, 5263, 5721]
+    },
+    'A Observar': {
+        'Piloto': [2758, 2762, 2477, 2592, 2602, 2392, 2638, 2723, 2766],
+        'Testigo': [2971, 2974, 2679, 2732, 2582, 2440, 2832, 2683, 3076]
+    },
+    'Irregulares': {
+        'Piloto': [2283, 2177, 2073, 2157, 2061, 2054, 2462, 2534, 2635],
+        'Testigo': [2158, 2266, 2171, 2074, 2001, 1857, 2130, 2020, 2435]
+    }
+}
+
+# 2. Configuración de tiempo (Corte Quirúrgico)
+# Sept, Oct, Nov -> Línea base limpia (Pre)
+# Dic, Ene, Feb, Mar -> Se excluyen por arranque escalonado (Contaminados)
+# Abr, May -> Etapa de maduración total (Post)
+meses = ['Sept', 'Oct', 'Nov', 'Dic', 'Ene', 'Feb', 'Mar', 'Abr', 'May']
+periodo = ['Pre', 'Pre', 'Pre', 'Excluir', 'Excluir', 'Excluir', 'Excluir', 'Post', 'Post']
+
+print("=== IMPACTO NETO DE LAS 140 SUCURSALES (MADURACIÓN ABR-MAY) ===\n")
+
+# 3. Procesamiento del modelo
+for segmento, vals in datos_140.items():
+    df_data = []
+    
+    # Transformar a formato largo
+    for i in range(9):
+        df_data.append([meses[i], periodo[i], vals['Piloto'][i], 1])
+        df_data.append([meses[i], periodo[i], vals['Testigo'][i], 0])
+        
+    df = pd.DataFrame(df_data, columns=['Mes', 'Periodo', 'Altas', 'Es_Piloto'])
+    
+    # Filtramos y eliminamos los meses contaminados (Dic - Mar)
+    df_limpio = df[df['Periodo'] != 'Excluir'].copy()
+    
+    # Crear variables Dummy sobre el dataframe limpio
+    df_limpio['Es_Post'] = df_limpio['Periodo'].apply(lambda x: 1 if x == 'Post' else 0)
+    df_limpio['Interaccion_DiD'] = df_limpio['Es_Piloto'] * df_limpio['Es_Post']
+    
+    # Modelo Matemático OLS
+    modelo = smf.ols('Altas ~ Es_Piloto + Es_Post + Interaccion_DiD', data=df_limpio).fit()
+    
+    efecto_neto = modelo.params['Interaccion_DiD']
+    p_value = modelo.pvalues['Interaccion_DiD']
+    
+    # Impresión de resultados
+    print(f"▶ SEGMENTO: {segmento}")
+    print(f"  Impacto Neto: {efecto_neto:+.0f} altas adicionales/mes")
+    print(f"  Valor-p (Ruido): {p_value:.3f}")
+    
+    if p_value < 0.05:
+        print("  Diagnóstico: Crecimiento sólido.")
+    elif efecto_neto > 0:
+        print("  Diagnóstico: Crecimiento positivo, pero con inestabilidad.")
+    else:
+        print("  Diagnóstico: Impacto negativo.")
+    print("-" * 65)
